@@ -2,7 +2,7 @@
   "name": "eventmodeler",
   "displayName": "EventModeler",
   "description": "Visual Event Storming / DDD canvas. Edit .eventmodel.json files with a full graphical editor.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "pradhan",
   "repository": {
     "type": "git",
