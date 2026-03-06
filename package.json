@@ -1,0 +1,92 @@
+{
+  "name": "eventmodeler",
+  "displayName": "EventModeler",
+  "description": "Visual Event Storming / DDD canvas. Edit .eventmodel.json files with a full graphical editor.",
+  "version": "1.0.0",
+  "publisher": "pradhan",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Visualization", "Other"],
+  "keywords": ["event modeling", "event storming", "DDD", "domain driven design", "diagram"],
+  "activationEvents": [],
+  "main": "./src/extension.js",
+  "pricing": "Free",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "eventmodeler.editor",
+        "displayName": "EventModeler",
+        "selector": [
+          { "filenamePattern": "*.eventmodel.json" },
+          { "filenamePattern": "*.em.json" }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "eventmodeler.newDiagram",
+        "title": "EventModeler: New Diagram"
+      },
+      {
+        "command": "eventmodeler.exportAiContext",
+        "title": "EventModeler: Export → AI Context (.md)"
+      },
+      {
+        "command": "eventmodeler.exportOpenAPI",
+        "title": "EventModeler: Export → OpenAPI YAML"
+      },
+      {
+        "command": "eventmodeler.exportTests",
+        "title": "EventModeler: Export → Test Cases (.md)"
+      },
+      {
+        "command": "eventmodeler.exportMermaid",
+        "title": "EventModeler: Export → Mermaid Diagram (.md)"
+      },
+      {
+        "command": "eventmodeler.exportFlow",
+        "title": "EventModeler: Export → Event Flow (.md)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "eventmodeler.newDiagram",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        { "command": "eventmodeler.newDiagram" },
+        { "command": "eventmodeler.exportAiContext" },
+        { "command": "eventmodeler.exportOpenAPI" },
+        { "command": "eventmodeler.exportTests" },
+        { "command": "eventmodeler.exportMermaid" },
+        { "command": "eventmodeler.exportFlow" }
+      ]
+    },
+    "languages": [
+      {
+        "id": "eventmodel",
+        "aliases": ["Event Model"],
+        "extensions": [".eventmodel.json", ".em.json"]
+      }
+    ],
+    "configuration": {
+      "title": "EventModeler",
+      "properties": {
+        "eventmodeler.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-save diagram to disk on every change."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2.22.0"
+  },
+  "scripts": {
+    "package": "vsce package --no-dependencies"
+  }
+}
