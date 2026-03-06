@@ -1,219 +1,222 @@
 'use strict';
 
+// Written in ES5-compatible style to avoid any class-field or syntax issues
+// with VS Code's bundled Node.js version.
+
 const vscode = require('vscode');
 const path   = require('path');
 const fs     = require('fs');
 
-// ─── Custom Editor Provider ──────────────────────────────────────────────────
+// ─── Provider constructor ────────────────────────────────────────────────────
 
-class EventModelEditorProvider {
-
-  static viewType = 'eventmodeler.editor';
-
-  /** @type {Map<string, vscode.WebviewPanel>} uri → panel */
-  _panels = new Map();
-
-  /** @param {vscode.ExtensionContext} context */
-  constructor(context) {
-    this._ctx = context;
-  }
-
-  /**
-   * VS Code calls this when the user opens a .eventmodel.json file.
-   * @param {vscode.CustomDocument} document
-   * @param {vscode.WebviewPanel} panel
-   */
-  async resolveCustomEditor(document, panel, _token) {
-    const key = document.uri.toString();
-    this._panels.set(key, panel);
-
-    panel.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this._ctx.extensionUri, 'media'),
-      ],
-    };
-
-    panel.webview.html = this._buildHtml(panel.webview);
-
-    // ── Messages: webview → extension ────────────────────────────────────────
-    panel.webview.onDidReceiveMessage(async msg => {
-      switch (msg.type) {
-
-        // Webview finished loading; send the current file contents
-        case 'ready': {
-          const diagram = this._readFile(document.uri.fsPath);
-          panel.webview.postMessage({ type: 'load', diagram });
-          break;
-        }
-
-        // Webview reports a change; persist to disk
-        case 'save': {
-          const text = JSON.stringify(msg.diagram, null, 2);
-          await this._writeFile(document.uri.fsPath, text);
-          break;
-        }
-
-        // Webview wants to write an adjacent export file
-        case 'exportFile': {
-          const dir  = path.dirname(document.uri.fsPath);
-          const stem = path.basename(document.uri.fsPath)
-                           .replace(/\.eventmodel\.json$/, '')
-                           .replace(/\.em\.json$/, '');
-          const outPath = path.join(dir, `${stem}${msg.suffix}`);
-          fs.writeFileSync(outPath, msg.content, 'utf8');
-          const rel = vscode.workspace.asRelativePath(outPath);
-          const choice = await vscode.window.showInformationMessage(
-            `Exported → ${rel}`, 'Open'
-          );
-          if (choice === 'Open') {
-            const doc = await vscode.workspace.openTextDocument(outPath);
-            await vscode.window.showTextDocument(doc, { preview: false });
-          }
-          break;
-        }
-
-        case 'error':
-          vscode.window.showErrorMessage(`EventModeler: ${msg.message}`);
-          break;
-      }
-    });
-
-    // Watch for external edits (git checkout, etc.)
-    const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(
-        vscode.Uri.file(path.dirname(document.uri.fsPath)),
-        path.basename(document.uri.fsPath)
-      )
-    );
-    watcher.onDidChange(() => {
-      if (!panel.active) {
-        const diagram = this._readFile(document.uri.fsPath);
-        panel.webview.postMessage({ type: 'reload', diagram });
-      }
-    });
-    panel.onDidDispose(() => {
-      watcher.dispose();
-      this._panels.delete(key);
-    });
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  _readFile(fsPath) {
-    try {
-      const raw = fs.readFileSync(fsPath, 'utf8').trim();
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async _writeFile(fsPath, text) {
-    try {
-      fs.writeFileSync(fsPath, text, 'utf8');
-    } catch (e) {
-      vscode.window.showErrorMessage(`EventModeler: could not save — ${e.message}`);
-    }
-  }
-
-  _buildHtml(webview) {
-    const htmlPath = path.join(this._ctx.extensionPath, 'media', 'editor.html');
-    let html = fs.readFileSync(htmlPath, 'utf8');
-    // Inject CSP source so VS Code allows the webview's own scripts/styles
-    html = html.replace(/\{\{cspSource\}\}/g, webview.cspSource);
-    return html;
-  }
-
-  /** Called by export commands */
-  triggerExport(format) {
-    for (const panel of this._panels.values()) {
-      if (panel.active) {
-        panel.webview.postMessage({ type: 'requestExport', format });
-        return true;
-      }
-    }
-    return false;
-  }
+function EventModelEditorProvider(context) {
+  this._ctx    = context;
+  this._panels = new Map(); // uri.toString() → WebviewPanel
 }
 
-// ─── activate ────────────────────────────────────────────────────────────────
+EventModelEditorProvider.VIEW_TYPE = 'eventmodeler.editor';
+
+// VS Code calls this for every .eventmodel.json that gets opened.
+// We implement CustomTextEditorProvider (resolveCustomTextEditor).
+EventModelEditorProvider.prototype.resolveCustomTextEditor = function(document, panel, _token) {
+  var self = this;
+
+  panel.webview.options = {
+    enableScripts: true,
+    localResourceRoots: [
+      vscode.Uri.joinPath(self._ctx.extensionUri, 'media'),
+    ],
+  };
+
+  try {
+    panel.webview.html = self._buildHtml(panel.webview);
+  } catch (err) {
+    vscode.window.showErrorMessage('EventModeler: could not load editor — ' + err.message);
+    return;
+  }
+
+  var key = document.uri.toString();
+  self._panels.set(key, panel);
+
+  // Messages from webview → extension
+  panel.webview.onDidReceiveMessage(function(msg) {
+    if (!msg || !msg.type) return;
+
+    switch (msg.type) {
+      case 'ready': {
+        var diagram = self._parse(document.getText());
+        panel.webview.postMessage({ type: 'load', diagram: diagram });
+        break;
+      }
+      case 'save': {
+        self._writeBack(document, msg.diagram);
+        break;
+      }
+      case 'exportFile': {
+        var dir     = path.dirname(document.uri.fsPath);
+        var stem    = path.basename(document.uri.fsPath)
+                         .replace(/\.eventmodel\.json$/, '')
+                         .replace(/\.em\.json$/, '');
+        var outPath = path.join(dir, stem + msg.suffix);
+        try {
+          fs.writeFileSync(outPath, msg.content, 'utf8');
+          var rel = vscode.workspace.asRelativePath(outPath);
+          vscode.window.showInformationMessage('Exported → ' + rel, 'Open').then(function(c) {
+            if (c === 'Open') {
+              vscode.workspace.openTextDocument(outPath).then(function(d) {
+                vscode.window.showTextDocument(d, { preview: false });
+              });
+            }
+          });
+        } catch (e) {
+          vscode.window.showErrorMessage('EventModeler: export failed — ' + e.message);
+        }
+        break;
+      }
+      case 'error': {
+        vscode.window.showErrorMessage('EventModeler: ' + msg.message);
+        break;
+      }
+    }
+  });
+
+  // Reload when external tool (git, text editor) changes the file
+  var docChange = vscode.workspace.onDidChangeTextDocument(function(e) {
+    if (e.document.uri.toString() === key && !panel.active) {
+      panel.webview.postMessage({ type: 'reload', diagram: self._parse(e.document.getText()) });
+    }
+  });
+
+  panel.onDidDispose(function() {
+    docChange.dispose();
+    self._panels.delete(key);
+  });
+};
+
+EventModelEditorProvider.prototype._parse = function(text) {
+  try {
+    var t = (text || '').trim();
+    return t ? JSON.parse(t) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+EventModelEditorProvider.prototype._writeBack = function(document, diagram) {
+  var text = JSON.stringify(diagram, null, 2);
+  var edit = new vscode.WorkspaceEdit();
+  edit.replace(
+    document.uri,
+    new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(document.getText().length)
+    ),
+    text
+  );
+  vscode.workspace.applyEdit(edit);
+};
+
+EventModelEditorProvider.prototype._buildHtml = function(webview) {
+  var htmlPath = path.join(this._ctx.extensionPath, 'media', 'editor.html');
+  var html = fs.readFileSync(htmlPath, 'utf8');
+  // Replace the {{cspSource}} placeholder — use split/join to avoid regex issues
+  html = html.split('{{cspSource}}').join(webview.cspSource);
+  return html;
+};
+
+EventModelEditorProvider.prototype.triggerExport = function(format) {
+  this._panels.forEach(function(panel) {
+    if (panel.active) {
+      panel.webview.postMessage({ type: 'requestExport', format: format });
+    }
+  });
+};
+
+// ─── activate / deactivate ───────────────────────────────────────────────────
 
 function activate(context) {
-  const provider = new EventModelEditorProvider(context);
+  var provider = new EventModelEditorProvider(context);
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
-      EventModelEditorProvider.viewType,
+      EventModelEditorProvider.VIEW_TYPE,
       provider,
-      { webviewOptions: { retainContextWhenHidden: true } }
+      {
+        webviewOptions: { retainContextWhenHidden: true },
+        supportsMultipleEditorsPerDocument: false,
+      }
     )
   );
 
   // New Diagram
   context.subscriptions.push(
-    vscode.commands.registerCommand('eventmodeler.newDiagram', async (folderUri) => {
-      // Determine target folder
-      let folder;
-      if (folderUri?.fsPath) {
-        folder = fs.statSync(folderUri.fsPath).isDirectory()
-          ? folderUri.fsPath
-          : path.dirname(folderUri.fsPath);
-      } else if (vscode.workspace.workspaceFolders?.length) {
-        folder = vscode.workspace.workspaceFolders[0].uri.fsPath;
-      } else {
-        vscode.window.showErrorMessage('Open a workspace folder first.');
+    vscode.commands.registerCommand('eventmodeler.newDiagram', function(folderUri) {
+      var folder = null;
+
+      if (folderUri && folderUri.fsPath) {
+        try {
+          folder = fs.statSync(folderUri.fsPath).isDirectory()
+            ? folderUri.fsPath
+            : path.dirname(folderUri.fsPath);
+        } catch (e) {}
+      }
+
+      if (!folder) {
+        var wf = vscode.workspace.workspaceFolders;
+        if (wf && wf.length > 0) folder = wf[0].uri.fsPath;
+      }
+
+      if (!folder) {
+        vscode.window.showErrorMessage('EventModeler: open a workspace folder first.');
         return;
       }
 
-      const rawName = await vscode.window.showInputBox({
+      vscode.window.showInputBox({
         prompt: 'Diagram name',
         value: 'my-event-model',
-        validateInput: v => v.trim() ? null : 'Name is required',
+        validateInput: function(v) { return (v && v.trim()) ? null : 'Name is required'; },
+      }).then(function(rawName) {
+        if (!rawName) return;
+        var slug  = rawName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
+        var fpath = path.join(folder, slug + '.eventmodel.json');
+
+        if (!fs.existsSync(fpath)) {
+          var blank = {
+            id: Date.now().toString(36),
+            name: rawName.trim(),
+            description: '',
+            nodes: [],
+            connections: [],
+            version: '1.1.0',
+            createdAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(fpath, JSON.stringify(blank, null, 2), 'utf8');
+        }
+
+        vscode.commands.executeCommand(
+          'vscode.openWith',
+          vscode.Uri.file(fpath),
+          EventModelEditorProvider.VIEW_TYPE
+        );
       });
-      if (!rawName) return;
-
-      const slug  = rawName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-_]/g, '').toLowerCase();
-      const fpath = path.join(folder, `${slug}.eventmodel.json`);
-
-      if (!fs.existsSync(fpath)) {
-        const blank = {
-          id: Date.now().toString(36),
-          name: rawName.trim(),
-          description: '',
-          nodes: [],
-          connections: [],
-          version: '1.1.0',
-          createdAt: new Date().toISOString(),
-        };
-        fs.writeFileSync(fpath, JSON.stringify(blank, null, 2), 'utf8');
-      }
-
-      await vscode.commands.executeCommand(
-        'vscode.openWith',
-        vscode.Uri.file(fpath),
-        EventModelEditorProvider.viewType
-      );
     })
   );
 
-  // Export commands — just forward to the active webview
-  for (const [cmd, fmt] of [
+  // Export commands
+  [
     ['eventmodeler.exportAiContext', 'aiCtx'],
-    ['eventmodeler.exportOpenAPI',  'openapi'],
-    ['eventmodeler.exportTests',    'tests'],
-    ['eventmodeler.exportMermaid',  'mermaid'],
-    ['eventmodeler.exportFlow',     'flow'],
-  ]) {
+    ['eventmodeler.exportOpenAPI',   'openapi'],
+    ['eventmodeler.exportTests',     'tests'],
+    ['eventmodeler.exportMermaid',   'mermaid'],
+    ['eventmodeler.exportFlow',      'flow'],
+  ].forEach(function(pair) {
     context.subscriptions.push(
-      vscode.commands.registerCommand(cmd, () => {
-        if (!provider.triggerExport(fmt)) {
-          vscode.window.showWarningMessage('No active EventModeler diagram open.');
-        }
+      vscode.commands.registerCommand(pair[0], function() {
+        provider.triggerExport(pair[1]);
       })
     );
-  }
+  });
 }
 
 function deactivate() {}
-module.exports = { activate, deactivate };
+module.exports = { activate: activate, deactivate: deactivate };

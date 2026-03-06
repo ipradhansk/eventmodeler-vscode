@@ -4,24 +4,42 @@
   "description": "Visual Event Storming / DDD canvas. Edit .eventmodel.json files with a full graphical editor.",
   "version": "1.0.0",
   "publisher": "pradhan",
-  "engines": { "vscode": "^1.80.0" },
-  "categories": ["Visualization", "Other"],
-  "keywords": ["event modeling", "event storming", "DDD", "domain driven design", "diagram"],
-  "activationEvents": [],
-  "main": "./src/extension.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/ipradhansk/eventmodeler-vscode.git"
   },
   "pricing": "Free",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "event modeling",
+    "event storming",
+    "DDD",
+    "domain driven design",
+    "diagram"
+  ],
+  "activationEvents": [
+    "onCustomEditor:eventmodeler.editor",
+    "onCommand:eventmodeler.newDiagram"
+  ],
+  "main": "./src/extension.js",
   "contributes": {
     "customEditors": [
       {
         "viewType": "eventmodeler.editor",
         "displayName": "EventModeler",
         "selector": [
-          { "filenamePattern": "*.eventmodel.json" },
-          { "filenamePattern": "*.em.json" }
+          {
+            "filenamePattern": "*.eventmodel.json"
+          },
+          {
+            "filenamePattern": "*.em.json"
+          }
         ],
         "priority": "default"
       }
@@ -33,23 +51,23 @@
       },
       {
         "command": "eventmodeler.exportAiContext",
-        "title": "EventModeler: Export → AI Context (.md)"
+        "title": "EventModeler: Export \u2192 AI Context (.md)"
       },
       {
         "command": "eventmodeler.exportOpenAPI",
-        "title": "EventModeler: Export → OpenAPI YAML"
+        "title": "EventModeler: Export \u2192 OpenAPI YAML"
       },
       {
         "command": "eventmodeler.exportTests",
-        "title": "EventModeler: Export → Test Cases (.md)"
+        "title": "EventModeler: Export \u2192 Test Cases (.md)"
       },
       {
         "command": "eventmodeler.exportMermaid",
-        "title": "EventModeler: Export → Mermaid Diagram (.md)"
+        "title": "EventModeler: Export \u2192 Mermaid Diagram (.md)"
       },
       {
         "command": "eventmodeler.exportFlow",
-        "title": "EventModeler: Export → Event Flow (.md)"
+        "title": "EventModeler: Export \u2192 Event Flow (.md)"
       }
     ],
     "menus": {
@@ -61,19 +79,36 @@
         }
       ],
       "commandPalette": [
-        { "command": "eventmodeler.newDiagram" },
-        { "command": "eventmodeler.exportAiContext" },
-        { "command": "eventmodeler.exportOpenAPI" },
-        { "command": "eventmodeler.exportTests" },
-        { "command": "eventmodeler.exportMermaid" },
-        { "command": "eventmodeler.exportFlow" }
+        {
+          "command": "eventmodeler.newDiagram"
+        },
+        {
+          "command": "eventmodeler.exportAiContext"
+        },
+        {
+          "command": "eventmodeler.exportOpenAPI"
+        },
+        {
+          "command": "eventmodeler.exportTests"
+        },
+        {
+          "command": "eventmodeler.exportMermaid"
+        },
+        {
+          "command": "eventmodeler.exportFlow"
+        }
       ]
     },
     "languages": [
       {
         "id": "eventmodel",
-        "aliases": ["Event Model"],
-        "extensions": [".eventmodel.json", ".em.json"]
+        "aliases": [
+          "Event Model"
+        ],
+        "extensions": [
+          ".eventmodel.json",
+          ".em.json"
+        ]
       }
     ],
     "configuration": {
